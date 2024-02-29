@@ -17,10 +17,21 @@ cargo install wownow
 
 ## Usage
 
-```bash
-wownow
-```
-
-```bash
-wownow --help
+```console
+$ wownow
+[
+  {
+    "product": "wow",
+    "version": "10.2.5",
+    "build": "53441",
+    "created_at": "2024-02-23T21:29:01Z"
+  },
+  {
+    "product": "wow_beta",
+    "version": "10.0.2",
+    "build": "47120",
+    "created_at": "2022-12-17T09:46:02Z"
+  },
+  ...
+]
 ```
