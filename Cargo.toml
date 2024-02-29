@@ -1,0 +1,19 @@
+[package]
+name = "wownow"
+version = "0.1.0"
+edition = "2021"
+license = "MIT"
+description = "A stupid CLI tool to get the current World of Warcraft versions"
+repository = "https://github.com/t-mart/wownow"
+documentation = "https://docs.rs/wownow"
+homepage = "https://github.com/t-mart/wownow"
+keywords = ["world-of-warcraft"]
+categories = ["command-line-utilities"]
+
+[dependencies]
+chrono = {version = "0.4.34", features = ["serde"]}
+reqwest = {version = "0.11.24", features = ["blocking"]}
+scraper = "0.18.1"
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+thiserror = "1.0.57"
