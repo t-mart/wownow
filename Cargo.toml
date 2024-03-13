@@ -1,9 +1,9 @@
 [package]
 name = "wownow"
-version = "0.2.0"
+version = "0.3.0"
 edition = "2021"
 license = "MIT"
-description = "A stupid CLI tool to get the current World of Warcraft versions"
+description = "A CLI tool to get the current versions of World of Warcraft"
 repository = "https://github.com/t-mart/wownow"
 documentation = "https://docs.rs/wownow"
 homepage = "https://github.com/t-mart/wownow"
@@ -12,8 +12,8 @@ categories = ["command-line-utilities"]
 
 [dependencies]
 chrono = {version = "0.4.34", features = ["serde"]}
-reqwest = {version = "0.11.24", features = ["blocking"]}
-scraper = "0.18.1"
+clap = { version = "4.5.2", features = ["derive"] }
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
 thiserror = "1.0.57"
+tokio = { version = "1.36.0", features = ["full"] }

@@ -1,37 +1,92 @@
 # wownow
 
-A stupid CLI tool to get the current World of Warcraft versions.
+A ~~stupid~~ CLI tool to get the current versions of World of Warcraft.
 
-Stupid, because it just scrapes the current version from the the homepage of
-[Wago Tools](https://wago.tools/). There are probably more authoritative ways to
-do this, but this is too easy to pass up.
+This tool is written to support WoW addon development in CI pipelines. For
+example, you could use it to check that your addon is declares the current
+version of the game, and not an outdated one.
 
-This tool is written to support WoW addon development in CI pipelines, where new
-addons may be released for the latest version(s) of the game.
+wownow issues [TACT](https://wowdev.wiki/TACT) requests to Blizzard's version
+servers, parses the response, and outputs a JSON object stating the current
+version and build for each region of each product. See an output example
+[below](#usage).
+
+wownow used to be "stupid" because it just scraped from the the homepage of
+[Wago Tools](https://wago.tools/), even though there was a JSON HTTP API
+endpoint (see [#1](https://github.com/t-mart/wownow/issues/1)). Now, it's less
+stupid.
 
 ## Installation
 
+Generally, build the project from source:
+
 ```bash
 cargo install wownow
+```
+
+For Linux platforms, you can also download a pre-built binary from the
+[releases](https://github.com/t-mart/wownow/releases) page. Or, you can use the
+[`binstall`](https://github.com/cargo-bins/cargo-binstall) cargo tool to install it:
+
+```bash
+cargo binstall wownow
 ```
 
 ## Usage
 
 ```console
 $ wownow
-[
-  {
-    "product": "wow",
-    "version": "10.2.5",
-    "build": "53441",
-    "created_at": "2024-02-23T21:29:01Z"
-  },
-  {
-    "product": "wow_beta",
-    "version": "10.0.2",
-    "build": "47120",
-    "created_at": "2022-12-17T09:46:02Z"
-  },
-  ...
-]
+{
+  "retrieval_datetime": "2024-03-14T17:56:25.593962700Z",
+  "products": [
+    {
+      "name": "wow",
+      "versions": [
+        {
+          "region": "us",
+          "version": "10.2.5",
+          "build": "53584"
+        },
+        {
+          "region": "eu",
+          "version": "10.2.5",
+          "build": "53584"
+        },
+        ...
+      ]
+    },
+    {
+      "name": "wow_classic",
+      "versions": [
+        {
+          "region": "us",
+          "version": "3.4.3",
+          "build": "53622"
+        },
+        {
+          "region": "eu",
+          "version": "3.4.3",
+          "build": "53622"
+        },
+        ...
+      ]
+    },
+    {
+      "name": "wow_classic_era",
+      "versions": [
+        {
+          "region": "us",
+          "version": "1.15.1",
+          "build": "53623"
+        },
+        {
+          "region": "eu",
+          "version": "1.15.1",
+          "build": "53623"
+        },
+        ...
+      ]
+    }
+  ]
+}
 ```

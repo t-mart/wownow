@@ -1,176 +1,128 @@
-//! A stupid CLI tool to get the current World of Warcraft versions
-//!
-//! The nice folks at <https://wago.tools/> show a table with the current versions of the game. This
-//! tool scrapes that table and returns a JSON with the versions.
+//! A CLI tool to get the current versions of World of Warcraft
 #![warn(clippy::pedantic)]
 #![warn(missing_docs)]
 #![warn(clippy::cargo)]
+#![allow(clippy::multiple_crate_versions)]
 
+use clap::Parser;
+use serde_json::{to_string, to_string_pretty};
 use std::process::ExitCode;
+use tokio::task::JoinSet;
+use wownow::prelude::*;
 
-use chrono::{DateTime, NaiveDateTime, Utc};
-use scraper::{error::SelectorErrorKind, Html, Selector};
-use serde::{Deserialize, Serialize};
-use thiserror::Error as ThisError;
-
-#[derive(ThisError, Debug)]
-enum ParseError {
-    #[error(transparent)]
-    ChronoParse(#[from] chrono::ParseError),
-
-    #[error("Version unparseable into (version, build)")]
-    VersionStrUnparseable,
+struct RunConfig {
+    live_only: bool,
+    pretty_print: bool,
 }
 
-#[derive(ThisError, Debug)]
-enum WagoGetError {
-    /// Some reqwest error during the GET request or reading the body
-    #[error(transparent)]
-    Reqwest(#[from] reqwest::Error),
-
-    /// Selector should be parseable
-    #[error("Selector not parseable")]
-    ScraperSelectorErrorKind(#[from] SelectorErrorKind<'static>),
-
-    /// Element with the id `app` not found
-    #[error("No `div#app` found")]
-    NoAppDivFound,
-
-    /// No `data-page` attribute found in the `div#app` element
-    #[error("No `data-page` attr found")]
-    NoDataPageAttrFound,
-
-    /// Couldn't parse the JSON in the `data-page` attribute
-    #[error(transparent)]
-    JsonParse(#[from] serde_json::Error),
-}
-
-#[derive(Debug, Deserialize)]
-struct WagoDataPage {
-    props: WagoDataPageProps,
-}
-
-#[derive(Debug, Deserialize)]
-struct WagoDataPageProps {
-    versions: Vec<WagoDataPageVersion>,
-}
-
-#[derive(Debug, Deserialize)]
-struct WagoDataPageVersion {
-    /// Ex: wow_classic_era
-    product: String,
-
-    /// Ex: 1.15.1.53495
-    version: String,
-
-    /// Ex: 2023-11-22 18:06:03
-    created_at: String,
-}
-
-impl WagoDataPage {
-    /// Fetches the data page from <https://wago.tools/> and returns a `WagoDataPage` instance.
-    ///
-    /// # Errors
-    ///
-    /// This method can return an [`Err`] of with a [`WagoGetError`]. See its documentation for more
-    /// information.
-    fn http_get() -> Result<Self, WagoGetError> {
-        let url = "https://wago.tools/";
-        let body = reqwest::blocking::get(url)?.text()?;
-
-        // does this panic? seems like it should if its not returning a result
-        let doc = Html::parse_document(&body);
-        let app_div = Selector::parse("div#app")?;
-
-        Ok(serde_json::from_str(
-            doc.select(&app_div)
-                .next()
-                .ok_or(WagoGetError::NoAppDivFound)?
-                .attr("data-page")
-                .ok_or(WagoGetError::NoDataPageAttrFound)?,
-        )?)
+fn resolve_switched_arg(yes: bool, no: bool, default: bool) -> bool {
+    match (yes, no) {
+        (true, false) => true,
+        (false, true) => false,
+        (false, false) => default,
+        (true, true) => unreachable!("clap should prevent this"),
     }
 }
 
-/// Our display format struct. Almost same as [`WagoDataPageVersion`], but massaged to our needs.
-#[derive(Debug, Serialize)]
-struct Version {
-    /// Ex: wow_classic_era
-    product: String,
-
-    /// Ex: 1.15.1
-    #[allow(clippy::struct_field_names)]
-    version: String,
-
-    /// Ex: 53495
-    build: String,
-
-    /// Ex: 2023-11-22T18:06:03Z
-    created_at: DateTime<Utc>,
+impl From<Args> for RunConfig {
+    fn from(args: Args) -> Self {
+        RunConfig {
+            live_only: resolve_switched_arg(args.live_only, args.no_live_only, true),
+            pretty_print: resolve_switched_arg(args.pretty, args.no_pretty, true),
+        }
+    }
 }
 
-impl TryFrom<WagoDataPageVersion> for Version {
-    type Error = ParseError;
+// eeek, there's no nice way to make clap `--no-*` switches. we follow this advice:
+// https://github.com/clap-rs/clap/discussions/5177
+/// Get the current versions of World of Warcraft
+#[derive(Parser, Debug)]
+#[command(version, about, long_about = None)]
+#[allow(clippy::struct_excessive_bools)]
+struct Args {
+    /// Only return products that are traditionally "live", or playable by most users. This is the
+    /// products named `wow`, `wow_classic`, and `wow_classic_era`.
+    ///
+    /// Defaults to on. Turn off with `--no-live-only`.
+    #[arg(long, overrides_with("no_live_only"))]
+    live_only: bool,
+    #[arg(long, overrides_with("live_only"), hide(true))]
+    no_live_only: bool,
 
-    fn try_from(wago_version: WagoDataPageVersion) -> Result<Self, Self::Error> {
-        let Some((version, build_str)) = wago_version.version.rsplit_once('.') else {
-            return Err(ParseError::VersionStrUnparseable);
-        };
-        let created_at =
-            NaiveDateTime::parse_from_str(&wago_version.created_at, "%Y-%m-%d %H:%M:%S")?.and_utc();
+    /// Pretty print the JSON output.
+    ///
+    /// Defaults to on. Turn off with `--no-pretty`.
+    #[arg(long, overrides_with("no_pretty"))]
+    pretty: bool,
+    #[arg(long, overrides_with("pretty"), hide(true))]
+    no_pretty: bool,
+}
 
-        Ok(Self {
-            product: wago_version.product,
-            version: version.to_owned(),
-            build: build_str.to_owned(),
-            created_at,
+type Result = std::result::Result<String, String>;
+
+const LIVE_PRODUCTS: [&str; 3] = ["wow", "wow_classic", "wow_classic_era"];
+
+async fn run(config: RunConfig) -> Result {
+    let summary = get_summary()
+        .await
+        .map_err(|e| format!("Error getting summary: {e}"))?;
+
+    let matching_products = summary
+        .records
+        .into_iter()
+        .filter_map(|record| {
+            // Only return products are that live (if called for by user) and have no flags. flags
+            // indicate things like cdn or bgdl which we don't care about, we just want the normal
+            // one.
+            if (!config.live_only || LIVE_PRODUCTS.contains(&record.product.as_str()))
+                && record.flags.is_empty()
+            {
+                Some(record.product)
+            } else {
+                None
+            }
         })
+        .collect::<Vec<_>>();
+
+    let mut set = JoinSet::new();
+    for matching_product in matching_products {
+        set.spawn(async move {
+            get_versions(&matching_product)
+                .await
+                .map(|resp| (resp, matching_product.clone()))
+                .map_err(|e| (e, matching_product))
+        });
     }
-}
 
-impl TryFrom<WagoDataPage> for Vec<Version> {
-    type Error = ParseError;
+    let mut fetch = VersionsFetch::new();
+    while let Some(join_result) = set.join_next().await {
+        let response_result = join_result.map_err(|e| format!("Error joining task: {e}"))?;
+        let (response, product_name) = response_result.map_err(|(error, product_name)| {
+            format!("Error getting `{product_name}` versions: {error}")
+        })?;
 
-    fn try_from(wago_data_page: WagoDataPage) -> Result<Self, Self::Error> {
-        wago_data_page
-            .props
-            .versions
-            .into_iter()
-            .map(Version::try_from)
-            .collect()
+        fetch.add_product(Product::from_versions_response(&product_name, &response));
     }
-}
 
-fn main() -> ExitCode {
-    let data_page_res = WagoDataPage::http_get();
-
-    let data_page = match data_page_res {
-        Ok(data_page) => data_page,
-        Err(err) => {
-            eprintln!("Error: {err}");
-            return ExitCode::FAILURE;
-        }
+    let output = if config.pretty_print {
+        to_string_pretty(&fetch).map_err(|e| format!("Error serializing JSON: {e}"))?
+    } else {
+        to_string(&fetch).map_err(|e| format!("Error serializing JSON: {e}"))?
     };
 
-    let versions_res = Vec::<Version>::try_from(data_page);
+    Ok(output)
+}
 
-    let versions = match versions_res {
-        Ok(versions) => versions,
-        Err(err) => {
-            eprintln!("Error: {err}");
-            return ExitCode::FAILURE;
-        }
-    };
-
-    let json_string = serde_json::to_string_pretty(&versions);
-
-    match json_string {
-        Ok(json) => {
-            println!("{json}");
+#[tokio::main]
+async fn main() -> ExitCode {
+    let args = Args::parse();
+    match run(args.into()).await {
+        Ok(msg) => {
+            println!("{msg}");
             ExitCode::SUCCESS
         }
-        Err(err) => {
-            eprintln!("Error: {err}");
+        Err(msg) => {
+            eprintln!("{msg}");
             ExitCode::FAILURE
         }
     }
