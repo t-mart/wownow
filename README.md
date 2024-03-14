@@ -90,3 +90,16 @@ $ wownow
   ]
 }
 ```
+
+### Leverage with `jq`
+
+You can use the [`jq`](https://jqlang.github.io/jq/) tool to filter the output
+to only the information you need.
+
+For example, to get the current version of retail (`wow` product) World of Warcraft in the
+`us` region:
+
+```console
+$ wownow | jq -r --arg product "wow" --arg region "us" '.products.[] | select(.name == $product).versions[] | select(.region == $region).version'
+10.2.5
+```
