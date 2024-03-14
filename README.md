@@ -100,6 +100,6 @@ For example, to get the current version of retail (`wow` product) World of Warcr
 `us` region:
 
 ```console
-$ wownow | jq -r --arg product "wow" --arg region "us" '.products.[] | select(.name == $product).versions[] | select(.region == $region).version'
+$ wownow | jq -r --arg product "wow" --arg region "us" '.products[] | select(.name == $product).versions[] | select(.region == $region).version'
 10.2.5
 ```
